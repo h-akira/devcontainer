@@ -1,0 +1,62 @@
+{
+  "name": "Claude Code Dev Container",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "TZ": "${localEnv:TZ:Asia/Tokyo}",
+      "CLAUDE_CODE_VERSION": "latest",
+      "GIT_DELTA_VERSION": "0.18.2",
+      "AWSCLI_VERSION": "2.34.41"
+    }
+  },
+  "runArgs": [
+    "--cap-add=NET_ADMIN",
+    "--cap-add=NET_RAW"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "bash",
+            "icon": "terminal-bash"
+          },
+          "zsh": {
+            "path": "zsh"
+          }
+        }
+      }
+    }
+  },
+  "remoteUser": "node",
+  "mounts": [
+    "source=devcontainer-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
+    "source=devcontainer-claude-${devcontainerId},target=/home/node/.claude,type=volume",
+    "source=devcontainer-aws-${devcontainerId},target=/home/node/.aws,type=volume",
+    "source=devcontainer-zinit-${devcontainerId},target=/home/node/.local/share/zinit,type=volume",
+    "source=devcontainer-vim-plugged-${devcontainerId},target=/home/node/.vim/plugged,type=volume",
+    "source=devcontainer-tmux-plugins-${devcontainerId},target=/home/node/.tmux/plugins,type=volume"
+  ],
+  "containerEnv": {
+    "NODE_OPTIONS": "--max-old-space-size=4096",
+    "CLAUDE_CONFIG_DIR": "/home/node/.claude",
+    "POWERLEVEL9K_DISABLE_GITSTATUS": "true",
+    "DEVCONTAINER": "true"
+  },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
+  "workspaceFolder": "/workspace",
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh && /usr/local/bin/init-claude.sh && /usr/local/bin/init-zsh.sh && /usr/local/bin/init-vim.sh && /usr/local/bin/init-tmux.sh && /usr/local/bin/init-mcp.sh",
+  "waitFor": "postStartCommand"
+}
