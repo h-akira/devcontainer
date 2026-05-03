@@ -1,0 +1,13 @@
+bindkey -e
+# bindkey '^A' beginning-of-line
+# bindkey '^E' end-of-line
+# bindkey '^B' backward-char
+# bindkey '^F' forward-char
+# bindkey "^P" up-line-or-search
+# bindkey "^N" down-line-or-search
+bindkey "^U" backward-kill-line
+# bindkey "^K" kill-line
+# bindkey "^W" backward-kill-word
+# bindkey "^D" delete-char
+# bindkey "^H" backward-delete-char
+bindkey "^R" history-search-multi-word
