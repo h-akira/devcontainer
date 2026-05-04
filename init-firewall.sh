@@ -168,3 +168,16 @@ if ! curl --connect-timeout 5 https://api.github.com/zen >/dev/null 2>&1; then
 else
     echo "Firewall verification passed - able to reach https://api.github.com as expected"
 fi
+
+# Verify AWS endpoint reachability via sts.amazonaws.com.
+# We use STS because it's the core AWS endpoint that aws CLI / SDKs always hit,
+# and is covered by the AWS IP ranges we just installed. We only check that
+# TCP/TLS handshake succeeds (any HTTP status counts as reachable — typically
+# 302 redirect with empty body, ~0 bytes). No -L (redirect-follow) and no -f
+# (fail on 4xx) to keep the assertion minimal: "AWS routing is open".
+if ! curl --connect-timeout 5 -sS -o /dev/null https://sts.amazonaws.com/; then
+    echo "ERROR: Firewall verification failed - unable to reach https://sts.amazonaws.com"
+    exit 1
+else
+    echo "Firewall verification passed - able to reach https://sts.amazonaws.com as expected"
+fi

@@ -97,14 +97,15 @@ COPY config /opt/devcontainer/config
 RUN chown -R node:node /opt/devcontainer
 
 # Copy and set up init scripts
-COPY init-firewall.sh init-zsh.sh init-vim.sh init-tmux.sh init-mcp.sh init-claude.sh /usr/local/bin/
+COPY init-firewall.sh init-zsh.sh init-vim.sh init-tmux.sh init-mcp.sh init-claude.sh init-all.sh /usr/local/bin/
 RUN chmod +x \
     /usr/local/bin/init-firewall.sh \
     /usr/local/bin/init-zsh.sh \
     /usr/local/bin/init-vim.sh \
     /usr/local/bin/init-tmux.sh \
     /usr/local/bin/init-mcp.sh \
-    /usr/local/bin/init-claude.sh && \
+    /usr/local/bin/init-claude.sh \
+    /usr/local/bin/init-all.sh && \
   echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
   chmod 0440 /etc/sudoers.d/node-firewall
 
