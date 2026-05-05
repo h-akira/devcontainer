@@ -150,7 +150,10 @@
   - 上書き対象は `~/.zshrc`（dot.zshrc）と `~/.p10k.zsh` と `~/.zsh/{zinitrc,bindkeyrc,dircolors}`。これらは「devcontainer の責務として固定」と割り切るならコメントで明示し、ユーザーは `~/.zsh/add.zshrc` で拡張する設計（実際 dot.zshrc:25-27 にその仕組みがある）にしている**はず**だが、`add.zshrc` も `cp -f` で上書きしている（`init-zsh.sh:14-18`）。**`add.zshrc` は initial template の場合だけ配置し、既存があれば残す**べき。
   - `init-mcp.sh` / `init-claude.sh` と同じ「存在すれば触らない」ロジックで揃える。
 - **影響**: ユーザーがコンテナ固有の設定を追記しても次回起動で消えるので、`add.zshrc` の存在意義が崩れる。
-- **対応方針:**
+- **対応方針:** **修正する**。ファイルを 2 種類に分けて扱う：
+  - **常に上書き**（devcontainer 管理）: `~/.zshrc`, `~/.zsh/zinitrc`, `~/.zsh/bindkeyrc`, `~/.zsh/dircolors`
+  - **存在しない時のみ配置**（ユーザー拡張点）: `~/.p10k.zsh`（`p10k configure` で書き換える可能性）, `~/.zsh/add.zshrc`（コンテナ固有設定の拡張点として `dot.zshrc` 内で source されている）
+  - これで `add.zshrc` の設計意図（拡張点）と動作が一致する。`init-zsh.sh` 内に `install_if_missing()` ヘルパを追加。
 
 ### 7. p10k の **背景色** がホストと同じまま（要件未達）
 
@@ -165,7 +168,11 @@
   typeset -g POWERLEVEL9K_DIR_FOREGROUND=255  # White on magenta
   ```
 - **影響**: 「ホストの terminal と取り違えて push する事故防止」という要件 6 のキー機能が機能していない。
-- **対応方針:**
+- **対応方針:** **修正する（ただしレビュアーの提案とは異なる方針で）**。
+  - レビュアーは `POWERLEVEL9K_DIR_BACKGROUND` を上書きする案を出していたが、p10k のサンプルでは `dir` セグメントは個別の `*_BACKGROUND` を持たず、全セグメント共通の `POWERLEVEL9K_BACKGROUND=236` が背景色として効いている。
+  - そこで **`POWERLEVEL9K_BACKGROUND=88`（暗赤）に変更**してプロンプト全体の背景色を変える方針とした。dir セグメントだけでなくプロンプト全体がホストと違う見た目になり視覚的混同を避ける効果が大きい。
+  - 前回の作業で `POWERLEVEL9K_DIR_FOREGROUND` を 5（マゼンタ）に変えていたのは元の方針のなごりで、references の値（31, 青系）に戻した。
+  - REQUIREMENTS.md の「ディレクトリ背景色」という表現は誤解を招くので「プロンプトの dir セグメント背景色（ls の出力色とは無関係）」に修正する余地あり（別途）。
 
 ### 8. TPM の `install_plugins` を非対話シェルから直接呼んでいる → 動かない可能性大
 
@@ -183,7 +190,11 @@
   ```
   または `install_plugins` をやめて TPM 直で `git clone` をループする init-tmux 側で書く。
 - **影響**: 初回起動でプラグインが入らず、ユーザーが手動で `prefix + I` を覚える必要がある。
-- **対応方針:**
+- **対応方針:** **対応しない（コード変更なし）— レビュアー指摘は誤り**。
+  - Docker 上のクリーンな ubuntu:24.04 + tmux 3.4 + 本リポジトリの `dot.tmux.conf` で実検証済み。
+  - `bin/install_plugins` 冒頭のコメントどおり「Tmux has to be installed on the system, but does not need to be started in order to run this script.」が事実だった。内部で `tmux start-server` を呼んで設定値を取得する仕組み。
+  - 検証結果: 5 つすべてのプラグイン（`tmux-sensible`, `tmux-yank`, `tmux-copycat`, `dracula/tmux`, `tpm`）が正常取得された。終了コード 0。
+  - ただし「出力黙化（`>/dev/null 2>&1`）と `|| true` の組み合わせ」で失敗時に気づけない問題は別途残るが、これは M19（vim 同型）と一緒に検討する。
 
 ### 9. `init-firewall.sh` が `aggregate` 不在時に黙って動作する／動作しない の判定なし
 
@@ -199,7 +210,7 @@
   GitHub 側にも同じガードを追加する。
 - **影響**: 静かに「AWS 0 件しか許可してない」状態で post-startup が完了する事態がありうる。
 - **公式オリジナルとの照合**: 公式の GitHub IP 取得（`api.github.com/meta`）も `aggregate -q` を通す同じ構造で件数チェックなし。公式準拠の挙動。
-- **対応方針:**
+- **対応方針:** **修正する**。GitHub・AWS の各ループ末尾で投入件数（`gh_count` / `aws_count`）をチェックし、0 件なら `exit 1`。`aggregate` が壊れている / 入力が空 / 出力をすべて捨てるなどの異常を明示的に検出する。AWS 側はすでに `aws_count` 変数を持っていたので `if` を 1 つ追加するだけ。GitHub 側は `gh_count` を新規追加。
 
 ### 10. `init-firewall.sh` の AWS IPv4 件数は `ipset` のデフォルト上限 `65536` をぎりぎり下回る程度
 
@@ -208,7 +219,7 @@
 - **修正方針**: `ipset create allowed-domains hash:net maxelem 131072` のように倍にしておく。さらに ipset add の戻り値を見る（現状 `2>/dev/null || true` で握りつぶし `init-firewall.sh:86`）。
 - **影響**: 数年スパンで突然 AWS の通信が落ちるバグが残る。診断が極めて困難。
 - **公式オリジナルとの照合**: 公式も `ipset create allowed-domains hash:net` のみで `maxelem` 指定なし。公式準拠だが、本リポジトリは AWS の数千 CIDR を追加するため公式より上限に近づくのは事実。
-- **対応方針:**
+- **対応方針:** **基本は対応しないが、可視化のみ追加**。`maxelem` を上書きする（`131072` などへ変更）コード変更は行わない（公式準拠を維持、現状の AWS CIDR は十分余裕がある）。代わりに verification 直前で `ipset list allowed-domains | grep -c '^[0-9]'` の結果と「default maxelem is 65536」をログ出力する。これで起動の度に「現在何件か」が見えるので、上限に近づいた時点で別途対応判断できる。
 
 ### 11. `aggregate` 経由で投入される CIDR は IPv4 のみ — `ipv6_prefix` を捨てている
 
@@ -216,7 +227,7 @@
 - **再現/根拠**: `init-firewall.sh:88`。
 - **修正方針**: ip6tables 有効化と合わせて、`.ipv6_prefixes[].ipv6_prefix` を別の `ipset create allowed-domains-v6 hash:net family inet6` に投入する。
 - **影響**: IPv6 を有効化したときに AWS だけ落ちる。
-- **対応方針:**
+- **対応方針:** **コードはコメントアウトで残す（実行はしない）**。Critical 2 で IPv6 をカーネルレベルで完全無効化したため、現状 IPv6 prefix を ipset に入れる意味はない。ただし将来 IPv6 を有効化する場合に備えて、`init-firewall.sh` に IPv6 取り込みコード（`ipset create allowed-domains-v6 hash:net family inet6` + `.ipv6_prefixes[].ipv6_prefix` のループ）をコメントアウトで残しておく。同時に `ip6tables` の fail-close ポリシーが必要になる旨もコメントで明記。
 
 ### 12. `init-mcp.sh` は親プロジェクトの `.gitignore` に `.mcp.json` がない場合の保護がない
 
@@ -233,7 +244,10 @@
   fi
   ```
 - **影響**: API キーが GitHub に push される事故。「外部サービスに迷惑をかけない」要件と直結。
-- **対応方針:**
+- **対応方針:** **修正する（警告のみ追加）**。
+  - 配置場所を `~/.mcp.json` や `~/.claude.json` に移す案も検討したが、Claude Code は `~/.mcp.json` を自動読み込みしないことが公式ドキュメントで判明（user スコープの MCP は `~/.claude.json` に格納されるが、これは OAuth state / project state 等を含むキッチンシンクなので外部から直接編集すべきでない）。
+  - そのため `/workspace/.mcp.json` 方式は維持。`init-mcp.sh` に `git check-ignore -q .mcp.json` でチェックを追加し、ignored でなければ目立つ警告ログを出す。`.gitignore` の自動編集はしない（親プロジェクトの責務、README に既に案内あり）。
+  - exit code は 0 のまま（警告を理由に postStart を fail-close すると過剰）。
 
 ### 13. `init-claude.sh` の配置位置の競合 — `~/.claude` ボリュームと CLAUDE_CONFIG_DIR の意味
 
@@ -241,7 +255,7 @@
 - **再現/根拠**: `init-claude.sh:18-21`。
 - **修正方針**: README にこの挙動を明示する。あるいは「マーカーファイル」（例: `/home/node/.claude/.devcontainer-installed`）の有無で判定し、削除されたかどうかを区別する。
 - **影響**: 軽微だが、ユーザーが「Claude Code の deny を一時的に外したい」と思って消したら次回起動で復活してハマる。
-- **対応方針:**
+- **対応方針:** **対応しない（コード変更なし）**。理由: (1) `init-claude.sh` は本リポジトリで新規追加したスクリプトでありこの挙動も含めての設計、(2) 「設定ファイルを消した場合にデフォルトに戻す」のは多くのツールの自然な挙動で、ユーザーがハマる可能性は低い、(3) レビュアー自身も「軽微」評価、(4) マーカーファイル方式や README 追記はコストに見合わない。
 
 ### 14. AWS CLI のインストール後にチェックサム検証なし
 
@@ -249,7 +263,7 @@
 - **再現/根拠**: `Dockerfile:60-71`。
 - **修正方針**: AWS が提供する PGP 公開鍵で署名を検証するステップを追加。Anthropic 公式テンプレートには無いが、submodule で多数のプロジェクトに行き渡る前提を考えると重要。
 - **影響**: AWS の公式配布元が侵害されるリスクは低いが、ゼロではない。
-- **対応方針:**
+- **対応方針:** **対応しない（コード変更なし）**。理由: (1) AWS 公式配布元（`awscli.amazonaws.com`）が侵害される現実的リスクは極めて低い、(2) 仮に侵害されてもスコープは devcontainer 内（コンテナ削除で消える）、(3) Dockerfile に 5〜10 行の GPG 検証ロジックを追加するコストに見合わない、(4) レビュアー自身も「リスクは低いがゼロではない」と低評価。将来的にサプライチェーンセキュリティを真面目にやる必要が出れば再検討する。
 
 ### 15. `astral.sh` は許可されているが、`uv` 自体の install 時はそこを叩く（Dockerfile build 時）
 
@@ -257,7 +271,7 @@
 - **再現/根拠**: `init-firewall.sh:108`。
 - **修正方針**: `astral.sh` が runtime に必要かを再検証して、不要なら削る。許可ドメインはミニマムにすべき。
 - **影響**: 実害は小さいが、許可リストをミニマルに保つ規律が崩れている。
-- **対応方針:**
+- **対応方針:** **対応しない（現状維持）**。理由: コンテナ内で手動 `uv self update` を実行したい場面は実用的にあり得るため、`astral.sh` 許可は残す。AI が勝手に `uv self update` を呼ぶリスクはあるが、副作用は uv バイナリ更新のみで「外部サーバーへの迷惑」にはあたらない。
 
 ### 16. `init-firewall.sh` で許可しているドメインに **Anthropic 関連の主要エンドポイント不足**の可能性
 
@@ -265,7 +279,7 @@
 - **再現/根拠**: `init-firewall.sh:94-97`。
 - **修正方針**: Claude Code の起動 → ログイン → コード実行を一通り通して、`tcpdump`/`iptables -L -v` でブロックされた宛先を観測し、許可リストに追加する。
 - **影響**: Claude Code が一部機能で詰まる可能性。
-- **対応方針:**
+- **対応方針:** **後回し（動作検証で実問題が出てから対応）**。理由: (1) 公式オリジナルも `api.anthropic.com` + `sentry.io` + `statsig.*` のみで動かしているので最低限のセットは満たしている、(2) 予防的に追加するとミニマル原則を崩しつつ実際に必要かは不明、(3) 実コンテナ起動時に Claude Code が機能不全を起こす症状が出てから、ブロックされた宛先を `iptables -L -v` で観測して必要なドメインを追加する方が確実。動作確認項目リスト（REVIEW.md 末尾）に「Claude Code 起動 → ログイン → コード実行で詰まらないか」を追記する余地あり。
 
 ---
 
