@@ -291,7 +291,8 @@
 - **再現/根拠**: `Dockerfile:48-49`、`devcontainer.json:46-47`。
 - **修正方針**: イメージ側 `mkdir` を削除し、ボリュームマウント直後の owner は Docker が自動でやる（`remoteUser: node`）。
 - **影響**: 動作はするが意図が伝わりにくい / 不要なレイヤを増やしている。
-- **対応方針:**
+- **公式オリジナルとの照合**: 公式も `/workspace` と `/home/node/.claude` の `mkdir` + `chown node:node` を Dockerfile で行っている。本リポジトリは `/home/node/.aws` を同じ流儀で追加しただけ。
+- **対応方針:** **対応しない（コード変更なし）**。理由: (1) 公式準拠の設計、(2) ボリュームマウント時の所有者問題に対する保険として機能している可能性がある（Docker / Dev Container CLI の初回マウント挙動でカバーされていない環境への保険）、(3) イメージサイズへの影響はほぼゼロ、(4) 削除するメリットが小さい。
 
 ### 18. ボリュームマウント先が `init-tmux.sh` で `mkdir -p` 済みでないと clone 先のオーナーが変わる可能性
 
@@ -299,7 +300,7 @@
 - **再現/根拠**: `Dockerfile` 上に `~/.tmux/` を作る記述がない、`init-tmux.sh:11` で `mkdir -p`。
 - **修正方針**: Dockerfile で `mkdir -p /home/node/.tmux/plugins && chown -R node:node /home/node/.tmux` を追加する。
 - **影響**: 一部 Docker バージョンで `init-tmux.sh` が失敗する可能性。
-- **対応方針:**
+- **対応方針:** **修正する**。Dockerfile の `mkdir -p` + `chown` リストに、`devcontainer.json` の named volume が指す親ディレクトリ全部（`~/.local/share/zinit`, `~/.vim/plugged`, `~/.tmux/plugins`）を追加。同じ問題は tmux だけでなく zinit / vim-plug ボリュームにも発生しうるため、まとめて対処。所有者は `node:node`。これで初回マウント時の親ディレクトリ root 所有問題を回避できる。
 
 ### 19. `init-vim.sh` が `vim +PlugInstall +qall` を 2 回連続実行する、しかも `>/dev/null 2>&1`
 
@@ -307,7 +308,10 @@
 - **再現/根拠**: `init-vim.sh:25-30`。
 - **修正方針**: 一度だけ呼んで失敗したらログを残す、もしくは `vim +PlugInstall +PlugClean +qall --not-a-term` のようにエラーが起きたら明示的に raise する。
 - **影響**: プラグインがインストールできていない状態でユーザーに引き渡される可能性がゼロではない。
-- **対応方針:**
+- **対応方針:** **修正する（出力黙化と `|| true` を外す。2 回実行は維持）**。
+  - 「2 回連続実行」自体は意図的で正当（[h-akira/vim](https://github.com/h-akira/vim) の README に "初回は順番の関係で二回必要" と明記。vim-plug が宣言順に install する都合で denops 系の依存解決に 2 回必要）。
+  - 問題は `>/dev/null 2>&1 || true` で完全に黙化していたこと。`|| true` を `|| echo "WARN: ..."` に変え、出力黙化も外した。これで失敗時は postStart のログに残る。
+  - PlugInstall は idempotent なので 2 回呼んでも害はなく、コメントで根拠を明記した。
 
 ### 20. `init-vim.sh` は `~/.vimrc` も毎回 `cp -f` で上書き（item 6 と同型）
 
@@ -315,7 +319,11 @@
 - **再現/根拠**: `init-vim.sh:13-22`。
 - **修正方針**: item 6 と同様、初期 template のみ書く方式に変えるか、README で「`~/.vimrc` 直接編集は反映されません。`config/vim/dot.vimrc` を編集してください」と明示。
 - **影響**: 軽い混乱要因。
-- **対応方針:**
+- **対応方針:** **修正する（H6 と同じ 2 モード式）**。
+  - 常に上書き: `~/.vimrc`, `~/.vim/autoload/plug.vim`, `~/.vim/template/`（devcontainer 管理）
+  - 存在時のみ配置: `~/.vim/add.vimrc`, `~/.vim/add.plugin.vimrc`（ユーザー拡張点）
+  - `dot.vimrc` には既に `if filereadable(expand('~/.vim/add.vimrc'))` 等のソース機構が組み込まれていたが、雛形ファイル自体が `config/vim/` になかったので新規作成（コメント行のみの空雛形）。
+  - これで vim 側も zsh と同じ思想（拡張点はユーザー編集を保護、本体は devcontainer が管理）に揃った。
 
 ### 21. `init-tmux.sh` の TPM clone が中断された場合のリカバリ機構なし
 
@@ -323,7 +331,7 @@
 - **再現/根拠**: `init-tmux.sh:19-22`。
 - **修正方針**: `[ -d "${TPM_DIR}/.git" ] || git clone ...`、または `[ -x "${TPM_DIR}/bin/install_plugins" ] || (rm -rf "${TPM_DIR}" && git clone ...)`。
 - **影響**: ユーザーが手動で `~/.tmux/plugins/tpm` をいじると壊れて回復しない。
-- **対応方針:**
+- **対応方針:** **対応しない（コード変更なし）**。理由: (1) 中断シナリオ自体が稀、(2) 壊れた場合はユーザーが `rm -rf ~/.tmux/plugins/tpm` してコンテナを再起動すれば再生成される（`init-tmux.sh:19-22` の if 文で再 clone される）、(3) named volume なのでコンテナ Rebuild でも残るが、`docker volume rm` で完全リセット可能。
 
 ### 22. `Dockerfile` の `COPY init-firewall.sh init-zsh.sh ...` は build context が submodule のときに動くが、`/workspace/.devcontainer/` 経由ビルドのときは動く
 
@@ -337,7 +345,7 @@
   .git/
   ```
 - **影響**: ビルドが遅くなる、ビルドキャッシュが破壊されやすい。ただ動作には影響しない。
-- **対応方針:**
+- **対応方針:** **対応しない（コード変更なし）**。理由: (1) 動作への影響はなくビルド速度の問題のみ、(2) `develop/` のサイズも軽微（数百KB程度）、(3) `references/` は `.gitignore` で除外されているので submodule 取り込み時には存在しない、(4) ビルド頻度はそれほど高くないので体感への影響も限定的。必要になれば後から `.dockerignore` を追加する。
 
 ### 23. submodule として取り込まれる前提だが、submodule update 時の `.devcontainer/develop/` の扱いが未整理
 
@@ -345,7 +353,7 @@
 - **再現/根拠**: README.md `78` 行目に一応書いてある（「利用側では無視してよい」）。
 - **修正方針**: 軽微。README に sparse-checkout の例を足すと丁寧。
 - **影響**: なし。
-- **対応方針:**
+- **対応方針:** **対応しない（コード変更なし）**。理由: (1) README.md 78 行目で既に「develop/ は本リポジトリの開発用、利用側では無視してよい」と案内済み、(2) submodule + sparse-checkout の組み合わせは罠が多く、ドキュメント追加しても実運用で使われる可能性が低い、(3) `develop/` のサイズは軽微で実害なし。
 
 ### 24. `mcp.json.template` の `context7` には `"disabled"` `"autoApprove"` が**ない**
 
@@ -353,7 +361,7 @@
 - **再現/根拠**: `config/mcp/mcp.json.template:20-26`。
 - **修正方針**: `context7` ブロックにも `"disabled": false, "autoApprove": []` を追加。
 - **影響**: 軽微。
-- **対応方針:**
+- **対応方針:** **対応しない（コード変更なし）**。理由: `disabled` / `autoApprove` は Claude Code の `.mcp.json` 仕様で必須ではなく、未指定でも動作する。整合性は美的な問題で実害なし。
 
 ### 25. `config/zsh/dot.zshrc:38` の `if (( $+commands[dircolors] ))` は OK だが、`dircolors` 設定ファイルが見つからないときのエラーメッセージがない
 
@@ -361,7 +369,7 @@
 - **再現/根拠**: `config/zsh/dot.zshrc:38-43`。
 - **修正方針**: `[ -f ${ZDOTDIR}/dircolors ]` でガード。
 - **影響**: ファイルが何らかの理由で消えるとログが出るが致命的ではない。
-- **対応方針:**
+- **対応方針:** **対応しない（コード変更なし）**。理由: `${ZDOTDIR}/dircolors` は `init-zsh.sh` で常に配置されるため、消えるのは「ユーザーが意図的に削除した」異常状態のみ。実害は dircolors からの警告が起動時に 1 回出る程度で、致命的ではない。
 
 ### 26. `config/zsh/zinitrc` の Zinit クローン先 `$HOME/.local/share/zinit` は永続化ボリュームと一致しているが、初回 clone 時にネットワーク権限が要る
 
@@ -369,7 +377,7 @@
 - **再現/根拠**: `config/zsh/zinitrc:2-8`、`devcontainer.json:60`。
 - **修正方針**: Critical 1 を直せば自動解消。
 - **影響**: 初回起動で稀に zinit が入らない。
-- **対応方針:**
+- **対応方針:** **対応しない（コード変更なし）**。Critical 1 と一体の問題。`waitFor: "postStartCommand"` により VSCode のターミナルは postStartCommand 完了まで開けず、ユーザーが zsh を起動する時点で firewall は確実に立っている。Critical 1 を「対応しない（実態として AI 隔離は成立）」と判断した時点で、本項目も自動的に解消。
 
 ---
 
