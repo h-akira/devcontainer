@@ -166,7 +166,10 @@
   fi
 
   # Default background color.
-  typeset -g POWERLEVEL9K_BACKGROUND=236
+  # devcontainer: dark-red (88) so the entire prompt is visually distinct from
+  # the host shell (which typically uses 236). Helps avoid running git push or
+  # other host-only commands by mistake inside the container terminal.
+  typeset -g POWERLEVEL9K_BACKGROUND=88
 
   # Separator between same-color segments on the left.
   typeset -g POWERLEVEL9K_LEFT_SUBSEGMENT_SEPARATOR='%244F|'
@@ -221,8 +224,7 @@
 
   ##################################[ dir: current directory ]##################################
   # Default current directory color.
-  # devcontainer: use magenta-ish foreground so the prompt looks distinct from the host shell.
-  typeset -g POWERLEVEL9K_DIR_FOREGROUND=5
+  typeset -g POWERLEVEL9K_DIR_FOREGROUND=31
   # If directory is too long, shorten some of its segments to the shortest possible unique
   # prefix. The shortened directory can be tab-completed to the original.
   typeset -g POWERLEVEL9K_SHORTEN_STRATEGY=truncate_to_unique

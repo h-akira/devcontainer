@@ -54,6 +54,7 @@ if ! echo "$gh_ranges" | jq -e '.web and .api and .git' >/dev/null; then
 fi
 
 echo "Processing GitHub IPs..."
+gh_count=0
 while read -r cidr; do
     if [[ ! "$cidr" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
         echo "ERROR: Invalid CIDR range from GitHub meta: $cidr"
@@ -61,7 +62,13 @@ while read -r cidr; do
     fi
     echo "Adding GitHub range $cidr"
     ipset add allowed-domains "$cidr"
+    gh_count=$((gh_count + 1))
 done < <(echo "$gh_ranges" | jq -r '(.web + .api + .git)[]' | aggregate -q)
+if [ "$gh_count" -eq 0 ]; then
+    echo "ERROR: 0 GitHub CIDR ranges added (aggregate may have produced empty output silently)"
+    exit 1
+fi
+echo "Added $gh_count GitHub CIDR ranges"
 
 # Fetch AWS IP ranges (covers all AWS services and SSO endpoints)
 echo "Fetching AWS IP ranges..."
@@ -86,7 +93,28 @@ while read -r cidr; do
     ipset add allowed-domains "$cidr" 2>/dev/null || true
     aws_count=$((aws_count + 1))
 done < <(echo "$aws_ranges" | jq -r '.prefixes[].ip_prefix' | aggregate -q)
+if [ "$aws_count" -eq 0 ]; then
+    echo "ERROR: 0 AWS CIDR ranges added (aggregate may have produced empty output silently)"
+    exit 1
+fi
 echo "Added $aws_count AWS CIDR ranges"
+
+# IPv6 is disabled at the kernel level via runArgs sysctls (see devcontainer.json),
+# so we do not need to populate AWS IPv6 ranges into ipset. If you re-enable IPv6
+# in the future, also bring up ip6tables with a fail-close policy and uncomment
+# the block below to allow AWS IPv6 traffic.
+#
+# ipset create allowed-domains-v6 hash:net family inet6 2>/dev/null || true
+# aws_v6_count=0
+# while read -r cidr; do
+#     if [[ ! "$cidr" =~ ^[0-9a-fA-F:]+/[0-9]+$ ]]; then
+#         echo "WARN: Skipping invalid IPv6 CIDR from AWS ip-ranges: $cidr"
+#         continue
+#     fi
+#     ipset add allowed-domains-v6 "$cidr" 2>/dev/null || true
+#     aws_v6_count=$((aws_v6_count + 1))
+# done < <(echo "$aws_ranges" | jq -r '.ipv6_prefixes[].ipv6_prefix' | aggregate -q)
+# echo "Added $aws_v6_count AWS IPv6 CIDR ranges"
 
 # Resolve and add other allowed domains
 for domain in \
@@ -153,6 +181,13 @@ iptables -A OUTPUT -m set --match-set allowed-domains dst -j ACCEPT
 iptables -A OUTPUT -j REJECT --reject-with icmp-admin-prohibited
 
 echo "Firewall configuration complete"
+
+# Report ipset population so we can monitor pressure on the default maxelem (65536).
+# This is informational only — when the count approaches the limit, raise maxelem
+# explicitly via "ipset create allowed-domains hash:net maxelem N".
+ipset_count=$(ipset list allowed-domains | grep -c '^[0-9]')
+echo "ipset allowed-domains: $ipset_count entries (default maxelem is 65536)"
+
 echo "Verifying firewall rules..."
 if curl --connect-timeout 5 https://example.com >/dev/null 2>&1; then
     echo "ERROR: Firewall verification failed - was able to reach https://example.com"
