@@ -44,9 +44,19 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
 # Set `DEVCONTAINER` environment variable to help with orientation
 ENV DEVCONTAINER=true
 
-# Create workspace and config directories and set permissions
-RUN mkdir -p /workspace /home/node/.claude /home/node/.aws && \
-  chown -R node:node /workspace /home/node/.claude /home/node/.aws
+# Create workspace and config directories and set permissions.
+# Volumes mounted from devcontainer.json land at these paths; we pre-create the
+# parent directories so the mount target is owned by node:node, not root, on
+# the first container start. Without this the parent dir may end up root-owned
+# on some Docker setups, breaking init-*.sh's mkdir -p / git clone steps.
+RUN mkdir -p \
+    /workspace \
+    /home/node/.claude \
+    /home/node/.aws \
+    /home/node/.local/share/zinit \
+    /home/node/.vim/plugged \
+    /home/node/.tmux/plugins && \
+  chown -R node:node /workspace /home/node/.claude /home/node/.aws /home/node/.local /home/node/.vim /home/node/.tmux
 
 WORKDIR /workspace
 
