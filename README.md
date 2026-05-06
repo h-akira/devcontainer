@@ -123,3 +123,16 @@ VSCode 上では：
 ## 詳細な設計と意思決定の記録
 
 `develop/REQUIREMENTS.md` と `develop/QA.md` を参照。
+
+## ライセンス
+
+[MIT License](LICENSE) で提供する。
+
+`Dockerfile` / `devcontainer.json` / `init-firewall.sh` は
+[anthropics/claude-code](https://github.com/anthropics/claude-code) の `.devcontainer/`
+を参考に作成した。Anthropic公式ドキュメント（[Development containers](https://code.claude.com/docs/en/devcontainer#try-the-reference-container)）は
+このリファレンス構成について次のように案内している:
+
+> It is provided as a working example rather than a maintained base image; use it to see how the pieces fit together before applying them to your own configuration.
+>
+> To use this configuration with your own project, copy the `.devcontainer/` directory into your repository and adjust the Dockerfile for your toolchain (...)
