@@ -144,9 +144,11 @@ resolve_and_allow() {
     local attempts="$2"
     echo "Resolving $domain (${attempts} attempt(s))..."
     local ips
+    # Note: with `set -e`, ` [ a -gt b ] && sleep` would propagate the test's
+    # nonzero exit when the test is false, killing the function. Use if/then.
     ips=$(for _ in $(seq 1 "$attempts"); do
               dig +noall +answer A "$domain"
-              [ "$attempts" -gt 1 ] && sleep 0.1
+              if [ "$attempts" -gt 1 ]; then sleep 0.1; fi
           done | awk '$4 == "A" {print $5}' | sort -u)
     if [ -z "$ips" ]; then
         echo "WARN: Failed to resolve $domain (skipping)"
