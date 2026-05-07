@@ -49,7 +49,7 @@
     "source=devcontainer-claude-${devcontainerId},target=/home/node/.claude,type=volume",
     "source=devcontainer-aws-${devcontainerId},target=/home/node/.aws,type=volume",
     "source=devcontainer-zinit-${devcontainerId},target=/home/node/.local/share/zinit,type=volume",
-    "source=devcontainer-vim-plugged-${devcontainerId},target=/home/node/.vim/plugged,type=volume",
+    "source=devcontainer-nvim-data-${devcontainerId},target=/home/node/.local/share/nvim,type=volume",
     "source=devcontainer-tmux-plugins-${devcontainerId},target=/home/node/.tmux/plugins,type=volume"
   ],
   "containerEnv": {

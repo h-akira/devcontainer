@@ -1,0 +1,3 @@
+-- ~/.config/nvim/add.lua — container-local Neovim settings.
+-- Sourced from init.lua at the very end. Edit freely; init-nvim.sh will not
+-- overwrite an existing file once placed.

@@ -24,7 +24,7 @@ run_step() {
 run_step "firewall" "sudo /usr/local/bin/init-firewall.sh"
 run_step "claude"   "/usr/local/bin/init-claude.sh"
 run_step "zsh"      "/usr/local/bin/init-zsh.sh"
-run_step "vim"      "/usr/local/bin/init-vim.sh"
+run_step "nvim"     "/usr/local/bin/init-nvim.sh"
 run_step "tmux"     "/usr/local/bin/init-tmux.sh"
 run_step "mcp"      "/usr/local/bin/init-mcp.sh"
 

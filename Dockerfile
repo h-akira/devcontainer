@@ -25,7 +25,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   aggregate \
   jq \
   nano \
-  vim \
   ca-certificates \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -54,9 +53,9 @@ RUN mkdir -p \
     /home/node/.claude \
     /home/node/.aws \
     /home/node/.local/share/zinit \
-    /home/node/.vim/plugged \
+    /home/node/.local/share/nvim \
     /home/node/.tmux/plugins && \
-  chown -R node:node /workspace /home/node/.claude /home/node/.aws /home/node/.local /home/node/.vim /home/node/.tmux
+  chown -R node:node /workspace /home/node/.claude /home/node/.aws /home/node/.local /home/node/.tmux
 
 WORKDIR /workspace
 
@@ -66,6 +65,28 @@ RUN ARCH=$(dpkg --print-architecture) && \
   wget "https://github.com/dandavison/delta/releases/download/${GIT_DELTA_VERSION}/git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
   dpkg -i "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
   rm "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb"
+
+# Install neovim via the official AppImage. Debian bookworm's neovim is 0.7,
+# which is too old for ddc.vim / denops (require >=0.11) and lazy.nvim. We
+# extract the AppImage at build time so fuse is not needed at runtime.
+# We also symlink `vi` and `vim` to point to nvim — the project uses neovim
+# exclusively, but tools that hard-code `vim` (git, sudoedit, etc.) still work.
+ARG NVIM_VERSION=0.12.2
+RUN ARCH=$(dpkg --print-architecture) && \
+  case "$ARCH" in \
+    amd64) NVIM_ARCH="x86_64" ;; \
+    arm64) NVIM_ARCH="arm64" ;; \
+    *) echo "Unsupported architecture: $ARCH" && exit 1 ;; \
+  esac && \
+  cd /tmp && \
+  curl -fsSL "https://github.com/neovim/neovim/releases/download/v${NVIM_VERSION}/nvim-linux-${NVIM_ARCH}.appimage" -o nvim.appimage && \
+  chmod +x nvim.appimage && \
+  ./nvim.appimage --appimage-extract >/dev/null && \
+  mv squashfs-root /opt/nvim && \
+  ln -sf /opt/nvim/AppRun /usr/local/bin/nvim && \
+  ln -sf /opt/nvim/AppRun /usr/local/bin/vim && \
+  ln -sf /opt/nvim/AppRun /usr/local/bin/vi && \
+  rm nvim.appimage
 
 # Install AWS CLI v2 (pinned version for reproducibility)
 ARG AWSCLI_VERSION=2.34.41
@@ -94,7 +115,8 @@ ENV PATH=$PATH:/usr/local/share/npm-global/bin
 # Set the default shell to zsh rather than sh
 ENV SHELL=/bin/zsh
 
-# Set the default editor and visual
+# Set the default editor and visual.
+# `vim` here is a symlink to nvim (see neovim install step above).
 ENV EDITOR=vim
 ENV VISUAL=vim
 
@@ -107,11 +129,11 @@ COPY config /opt/devcontainer/config
 RUN chown -R node:node /opt/devcontainer
 
 # Copy and set up init scripts
-COPY init-firewall.sh init-zsh.sh init-vim.sh init-tmux.sh init-mcp.sh init-claude.sh init-all.sh /usr/local/bin/
+COPY init-firewall.sh init-zsh.sh init-nvim.sh init-tmux.sh init-mcp.sh init-claude.sh init-all.sh /usr/local/bin/
 RUN chmod +x \
     /usr/local/bin/init-firewall.sh \
     /usr/local/bin/init-zsh.sh \
-    /usr/local/bin/init-vim.sh \
+    /usr/local/bin/init-nvim.sh \
     /usr/local/bin/init-tmux.sh \
     /usr/local/bin/init-mcp.sh \
     /usr/local/bin/init-claude.sh \
