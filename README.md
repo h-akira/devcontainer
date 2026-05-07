@@ -189,6 +189,29 @@ sudo apt install <package>
 - `sudo apt install` で入れたパッケージは **コンテナ Rebuild で消える**（Stop/Start では残る）
 - 継続的に必要なパッケージは「フォーク化して Dockerfile に焼き込む」方が筋が良い
 
+#### `sudo apt install` が `No route to host` で失敗することがある（Fastly CDN の制限）
+
+`deb.debian.org` / `security.debian.org` は Fastly CDN 配下にあり、DNS 問い合わせ
+ごとに違う IP を返してくる。`init-firewall.sh` はコンテナ起動時に **5 回 dig** して
+できるだけ多くの IP をホワイトリストに入れているが、Fastly は短時間では同じ IP を
+返し続ける挙動があるため、起動時のスナップショットですべての IP を拾いきれない
+ことがある。その状態で時間が経って `apt install` を打つと、Fastly が別の IP に
+ローテーションして「ホワイトリスト外の IP」に解決され、ファイアウォールが REJECT
+する（`Could not connect ... No route to host`）。
+
+#### 対処
+
+1. **コンテナを Rebuild する**（最も確実）
+   - `init-firewall.sh` が再実行されて、その時点の Fastly IP プールを取り直す
+   - ただし数分〜数時間で再びズレる可能性あり
+
+2. **`sudo apt install` を時間を置いて再試行する**
+   - 別の Fastly エッジ IP に当たれば通る
+   - ただしランダム性に依存
+
+3. **`pypi.org` / `files.pythonhosted.org`（uvx / pip）でも同じ問題は理論上ある**
+   - こちらは DNS が複数 IP を一度に返してくれるので 5 回 dig で 4〜5 個拾えており、実害はほぼなし
+
 ### フォーク化（vendor in）した運用
 
 `.devcontainer/` を submodule から離脱させて親プロジェクトに vendor in した場合、
