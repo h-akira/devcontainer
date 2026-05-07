@@ -100,6 +100,52 @@ docker volume ls | grep devcontainer-
 docker volume rm <name>
 ```
 
+## コンテナをリセットしたい時
+
+状況に応じて段階的に強くなる手順がある。最も軽いものから試すこと。
+
+### レベル 1: コードの変更を反映するだけ
+
+VSCode コマンドパレット → **「Dev Containers: Rebuild Container」**
+
+- Docker image を再ビルド（Dockerfile / config の変更が反映される）
+- named volume は **残る**（`~/.aws`, `~/.claude`, `~/.local/share/nvim` 等は保持）
+- ビルドキャッシュは使う
+
+`init-*.sh` の修正、`config/` の編集、Dockerfile の小さな変更などはこれで足りる。
+
+### レベル 2: ビルドキャッシュも捨てる
+
+VSCode コマンドパレット → **「Dev Containers: Rebuild Without Cache and Reopen in Container」**
+
+- キャッシュを使わずに Dockerfile を最初から評価
+- `apt install` の更新反映、`curl` で取る外部ファイルの再取得など
+- それでも named volume は残る
+
+### レベル 3: 永続化ボリュームも消す（完全リセット）
+
+SSO トークン・Claude Code 設定・シェル履歴・nvim プラグインキャッシュなどが**全部消える**ことに注意。
+
+```bash
+# VSCode を閉じてから、ホスト側ターミナルで実行
+docker volume ls --format "{{.Name}}" | grep "^devcontainer-" | xargs docker volume rm
+```
+
+その後 VSCode で再度「Reopen in Container」。
+
+### レベル 4: コンテナ・イメージ・ボリュームすべて削除
+
+完全にゼロから作り直したい時。`vsc-` プレフィックスは VSCode が devcontainer 用に作るイメージ名のお決まり。
+
+```bash
+# このプロジェクトの devcontainer 関連リソースを全部削除
+docker ps -a --format "{{.Names}}\t{{.Image}}" | grep "^vsc-" | awk '{print $1}' | xargs -r docker rm -f
+docker images --format "{{.Repository}}:{{.Tag}}" | grep "^vsc-" | xargs -r docker rmi -f
+docker volume ls --format "{{.Name}}" | grep "^devcontainer-" | xargs -r docker volume rm
+```
+
+**注意**: `vsc-*` / `devcontainer-*` で grep しているので、**他プロジェクトの devcontainer リソースも同時に消える**。複数プロジェクトを Dev Container で運用している場合は、grep を絞るか個別に名前指定すること（例: `grep "vsc-myproject"`）。
+
 ## GitHub の認証
 
 セキュリティのため、コンテナ内には GitHub の認証情報を持ち込まない方針。
@@ -213,6 +259,7 @@ git commit -m "vendor in .devcontainer for project-specific customization"
 | MCP サーバー | `config/mcp/mcp.json.template`（既存ユーザーは `.mcp.json` を直接編集） |
 | zsh / nvim / tmux 設定 | `config/{zsh,nvim,tmux}/` |
 | Neovim バージョン | `Dockerfile` の `NVIM_VERSION`（AppImage タグ） |
+| Deno バージョン | `Dockerfile` の `DENO_VERSION`（denops.vim 用） |
 | sudo パスワード | `devcontainer.json` の `build.args.SUDO_PASSWORD` |
 
 ## 詳細な設計と意思決定の記録

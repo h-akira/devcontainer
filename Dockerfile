@@ -88,6 +88,23 @@ RUN ARCH=$(dpkg --print-architecture) && \
   ln -sf /opt/nvim/AppRun /usr/local/bin/vi && \
   rm nvim.appimage
 
+# Install Deno (required by denops.vim, which powers ddc.vim completion).
+# Pulled from the official GitHub release zip for reproducibility — same pattern
+# as neovim above.
+ARG DENO_VERSION=2.7.14
+RUN ARCH=$(dpkg --print-architecture) && \
+  case "$ARCH" in \
+    amd64) DENO_ARCH="x86_64-unknown-linux-gnu" ;; \
+    arm64) DENO_ARCH="aarch64-unknown-linux-gnu" ;; \
+    *) echo "Unsupported architecture: $ARCH" && exit 1 ;; \
+  esac && \
+  cd /tmp && \
+  curl -fsSL "https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-${DENO_ARCH}.zip" -o deno.zip && \
+  unzip -q deno.zip && \
+  mv deno /usr/local/bin/deno && \
+  chmod +x /usr/local/bin/deno && \
+  rm deno.zip
+
 # Install AWS CLI v2 (pinned version for reproducibility)
 ARG AWSCLI_VERSION=2.34.41
 RUN ARCH=$(dpkg --print-architecture) && \
