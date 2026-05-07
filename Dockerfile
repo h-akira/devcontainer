@@ -119,4 +119,13 @@ RUN chmod +x \
   echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
   chmod 0440 /etc/sudoers.d/node-firewall
 
+# Allow node to use sudo with a password.
+# AI agents cannot type passwords interactively, so prompts effectively block
+# them while the human user can still run e.g. `sudo apt install ...` for
+# ad-hoc experimentation. Override SUDO_PASSWORD via devcontainer.json's
+# build.args to avoid baking a default into the image.
+ARG SUDO_PASSWORD=devcontainer
+RUN echo "node:${SUDO_PASSWORD}" | chpasswd && \
+  usermod -aG sudo node
+
 USER node

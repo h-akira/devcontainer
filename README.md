@@ -109,6 +109,62 @@ VSCode 上では：
 
 の 2 ウィンドウ運用が分かりやすい。
 
+## sudo の運用
+
+コンテナ内の `node` ユーザーには **パスワード付き sudo** が許可されている。
+パスワードは `devcontainer`（Dockerfile の `SUDO_PASSWORD` build arg で変更可能）。
+
+```bash
+sudo apt install <package>
+# Password: devcontainer
+```
+
+### この設計の意図
+
+- **AI（Claude Code 等）はパスワードを対話入力できない**ため、sudo プロンプトで実質的にブロックされる
+- 人間のユーザーは VSCode の統合ターミナル等で対話的に sudo を使える
+- 「AI は隔離、人間は便利」の妥協点
+
+### 注意
+
+- パスワードはイメージ層に焼き込まれている（`docker history` で見える可能性）
+- `sudo apt install` で入れたパッケージは **コンテナ Rebuild で消える**
+- 継続的に必要なパッケージは Dockerfile に追加して Rebuild する
+
+## プロジェクト固有のカスタマイズ
+
+汎用的な開発環境を共通化するため、本リポジトリは submodule として取り込む運用を想定している。
+ただしプロジェクト固有の事情で `.devcontainer/` の中身（Dockerfile, init-*.sh, config/* など）を
+改変したい場合は、**submodule から離脱して通常のディレクトリに切り替える**運用を推奨する。
+
+### submodule から離脱する手順
+
+```bash
+# 1. submodule の登録を解除し、ワーキングツリーから削除
+git submodule deinit -f .devcontainer
+git rm -f .devcontainer
+rm -rf .git/modules/.devcontainer
+
+# 2. 同じ内容を通常のディレクトリとしてクローンし直す
+git clone https://github.com/h-akira/devcontainer.git .devcontainer
+rm -rf .devcontainer/.git
+
+# 3. 親プロジェクトにコミット
+git add .devcontainer
+git commit -m "vendor in .devcontainer for project-specific customization"
+```
+
+これで `.devcontainer/` は親プロジェクトの一部になり、Dockerfile に
+プロジェクト固有のパッケージを追加するなど自由に編集できる。
+
+### 上流の更新を取り込みたい場合
+
+離脱後は基本的に独自路線として運用する。上流の更新を取り込みたい場合は、
+個別ファイル単位で `wget` などで取得して手動でマージする。
+頻繁に上流追従したい用途なら、submodule のままにして必要なパッケージは
+`sudo apt install` で都度追加（コンテナ Rebuild で消える前提）するか、
+本リポジトリに上流コントリビュートする方が長期的に楽。
+
 ## カスタマイズ
 
 | 変更したい項目 | 編集する場所 |
@@ -119,6 +175,7 @@ VSCode 上では：
 | タイムゾーン | ホスト側で `export TZ=...` または `devcontainer.json` |
 | MCP サーバー | `config/mcp/mcp.json.template`（既存ユーザーは `.mcp.json` を直接編集） |
 | zsh / vim / tmux 設定 | `config/{zsh,vim,tmux}/` |
+| sudo パスワード | `devcontainer.json` の `build.args.SUDO_PASSWORD` |
 
 ## 詳細な設計と意思決定の記録
 
