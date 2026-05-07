@@ -111,25 +111,60 @@ VSCode 上では：
 
 ## sudo の運用
 
+本リポジトリは **submodule として取り込む共通利用** と **vendor in した（フォーク化した）プロジェクト固有利用** の
+2 通りの運用を想定しており、sudo の扱いも運用形態によって変える設計。
+
+### submodule 運用（既定）
+
 コンテナ内の `node` ユーザーには **パスワード付き sudo** が許可されている。
 パスワードは `devcontainer`（Dockerfile の `SUDO_PASSWORD` build arg で変更可能）。
 
 ```bash
+sudo apt update
 sudo apt install <package>
 # Password: devcontainer
 ```
 
-### この設計の意図
+`init-firewall.sh` で `deb.debian.org` / `security.debian.org` を許可しているため、
+コンテナ内で apt から実際にパッケージを取得できる。
 
+#### この設計の意図
+
+- submodule のままでは `.devcontainer/Dockerfile` を編集すると submodule の dirty diff になり扱いが面倒
+- そこで **コンテナ内の対話 sudo** で `apt install` を許す妥協を採った
 - **AI（Claude Code 等）はパスワードを対話入力できない**ため、sudo プロンプトで実質的にブロックされる
 - 人間のユーザーは VSCode の統合ターミナル等で対話的に sudo を使える
-- 「AI は隔離、人間は便利」の妥協点
 
-### 注意
+#### 注意
 
 - パスワードはイメージ層に焼き込まれている（`docker history` で見える可能性）
-- `sudo apt install` で入れたパッケージは **コンテナ Rebuild で消える**
-- 継続的に必要なパッケージは Dockerfile に追加して Rebuild する
+- `sudo apt install` で入れたパッケージは **コンテナ Rebuild で消える**（Stop/Start では残る）
+- 継続的に必要なパッケージは「フォーク化して Dockerfile に焼き込む」方が筋が良い
+
+### フォーク化（vendor in）した運用
+
+`.devcontainer/` を submodule から離脱させて親プロジェクトに vendor in した場合、
+**sudo 機能はコメントアウトで無効化することを推奨する**。理由：
+
+- Dockerfile を自由に編集できるので、必要なパッケージは apt-get install リストに追記して Rebuild する
+- runtime の sudo が不要になる
+- AI 隔離が strict（パスワードを巡るゲームを完全に排除できる）
+- パスワードがイメージ層に残る footgun も解消
+
+#### 無効化手順
+
+`Dockerfile` 末尾付近の以下のブロックをコメントアウト：
+
+```dockerfile
+# ARG SUDO_PASSWORD=devcontainer
+# RUN echo "node:${SUDO_PASSWORD}" | chpasswd && \
+#   usermod -aG sudo node
+```
+
+合わせて `init-firewall.sh` の Debian 関連の許可（`deb.debian.org`, `security.debian.org`）も削っておくと、
+ファイアウォールがミニマムに保てる。
+
+submodule から離脱する手順は次節を参照。
 
 ## プロジェクト固有のカスタマイズ
 

@@ -124,6 +124,13 @@ RUN chmod +x \
 # them while the human user can still run e.g. `sudo apt install ...` for
 # ad-hoc experimentation. Override SUDO_PASSWORD via devcontainer.json's
 # build.args to avoid baking a default into the image.
+#
+# IMPORTANT — this is intended for the *submodule* usage of this repo, where
+# editing the Dockerfile is awkward (it would dirty the submodule). When you
+# vendor this repo into a project (after `git submodule deinit`), prefer to
+# COMMENT OUT the two lines below and instead bake the packages you need into
+# the apt-get install list above. That keeps AI isolation strict and removes
+# the password-on-image-layer footgun. See README.md for details.
 ARG SUDO_PASSWORD=devcontainer
 RUN echo "node:${SUDO_PASSWORD}" | chpasswd && \
   usermod -aG sudo node

@@ -116,12 +116,21 @@ echo "Added $aws_count AWS CIDR ranges"
 # done < <(echo "$aws_ranges" | jq -r '.ipv6_prefixes[].ipv6_prefix' | aggregate -q)
 # echo "Added $aws_v6_count AWS IPv6 CIDR ranges"
 
-# Resolve and add other allowed domains
+# Resolve and add other allowed domains.
+#
+# IMPORTANT — `deb.debian.org` and `security.debian.org` are allowed only to
+# support the password-sudo `apt install` workflow used in the submodule mode
+# (see Dockerfile and README.md "sudo の運用"). When this repo is vendored in
+# (after `git submodule deinit`) and the password-sudo block in Dockerfile is
+# commented out, REMOVE these two domains here as well so the allowlist stays
+# minimal.
 for domain in \
     "registry.npmjs.org" \
     "api.anthropic.com" \
     "sentry.io" \
     "statsig.com" \
+    "deb.debian.org" \
+    "security.debian.org" \
     "marketplace.visualstudio.com" \
     "vscode.blob.core.windows.net" \
     "update.code.visualstudio.com" \
