@@ -422,6 +422,33 @@ REQUIREMENTS.md の「残課題」と本文を照合した結果：
 - REQUIREMENTS.md `552-558` 行目にある「`raw.githubusercontent.com`, `codeload.github.com`, `objects.githubusercontent.com` を**要検証**として追加候補に挙げている」点は実装で許可済み（`init-firewall.sh:106-108`）。OK。
 - README に書かれている `~/.aws/config` のサンプル（要件 §残課題 A: マルチプロファイル）が **無い**。
 
+### 追加で浮上した課題: 広範な IP レンジ許可の妥当性
+
+実装後に判明した重要な論点。AWS の `ip-ranges.json` を許可している都合で：
+
+- **AWS 上に誰かが立てた任意のサービス**（他人の EC2、S3 バケット、CloudFront 等）も
+  ホワイトリストに含まれる。`ip-ranges.json` の `service: AMAZON` は AWS のすべての
+  公開 IP を網羅しているため。
+- 同じ問題が GitHub IP 許可にもある（GitHub Pages, Gist, raw.githubusercontent 等で
+  攻撃者がホストしたコンテンツに到達できる）。
+- Fastly を将来追加する場合も同様（Fastly 顧客の任意のサービスが許可される）。
+
+これは脅威モデルとして「**AI による偶発的な迷惑回避**」は満たすが、「**悪意ある AI**
+による意図的な情報送信」は防げないことを意味する。
+
+#### 対応方針
+
+- **README に「ファイアウォール許可の実態と限界」セクションを追加**して、脅威モデルと
+  許可範囲の実態を明示した（コミット参照）。
+- AWS の `service` 別絞り込み（`AMAZON` 全許可ではなく `STS` / `S3` 等に限定）は
+  技術的に可能だが、運用負荷とのトレードオフで現状は **対応しない**。
+- 真にドメインベースで制御したい場合は HTTP プロキシ / dnsmasq + ipset 動的連携が
+  必要だが本リポジトリのスコープ外。
+- Fastly IP レンジの追加（`api.fastly.com/public-ip-list`）は本来 `apt install` 信頼性
+  改善のために検討していたが、上記の論点を踏まえると **今は追加しない**。
+  必要なパッケージは Dockerfile に焼き込むか、`sudo apt install` の失敗時は Rebuild で
+  対処する運用に倒す（README にその旨を記載済み）。
+
 **未実装項目への対応方針:**
 （取りこぼしのうち、実装する/しないの判断と理由を記入）
 
