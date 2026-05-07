@@ -124,31 +124,34 @@ echo "Added $aws_count AWS CIDR ranges"
 # (after `git submodule deinit`) and the password-sudo block in Dockerfile is
 # commented out, REMOVE these two domains here as well so the allowlist stays
 # minimal.
-for domain in \
-    "registry.npmjs.org" \
-    "api.anthropic.com" \
-    "sentry.io" \
-    "statsig.com" \
-    "deb.debian.org" \
-    "security.debian.org" \
-    "marketplace.visualstudio.com" \
-    "vscode.blob.core.windows.net" \
-    "update.code.visualstudio.com" \
-    "pypi.org" \
-    "files.pythonhosted.org" \
-    "context7.com" \
-    "mcp.context7.com" \
-    "raw.githubusercontent.com" \
-    "codeload.github.com" \
-    "objects.githubusercontent.com" \
-    "astral.sh"; do
-    echo "Resolving $domain..."
-    ips=$(dig +noall +answer A "$domain" | awk '$4 == "A" {print $5}')
+#
+# We split domains into two groups:
+#
+#   1) "single-resolve" — stable hosts where one dig is enough. Either the DNS
+#      returns multiple IPs in one answer (e.g. registry.npmjs.org returns ~12),
+#      the host has a single stable IP (e.g. api.anthropic.com), the domain
+#      backs onto AWS (covered by ip-ranges.json above), or it is rarely hit so
+#      a stale IP is unlikely to cause noticeable failures.
+#
+#   2) "multi-resolve" — Fastly-fronted CDNs that return only one IP per query
+#      AND are hit frequently (apt, pip/uvx). Without multiple resolves, the IP
+#      resolved at runtime can land outside the snapshot we took at startup,
+#      which is exactly what bit `sudo apt install` early on. We dig each of
+#      these 5 times to capture the rotating subset.
+
+resolve_and_allow() {
+    local domain="$1"
+    local attempts="$2"
+    echo "Resolving $domain (${attempts} attempt(s))..."
+    local ips
+    ips=$(for _ in $(seq 1 "$attempts"); do
+              dig +noall +answer A "$domain"
+              [ "$attempts" -gt 1 ] && sleep 0.1
+          done | awk '$4 == "A" {print $5}' | sort -u)
     if [ -z "$ips" ]; then
         echo "WARN: Failed to resolve $domain (skipping)"
-        continue
+        return 0
     fi
-
     while read -r ip; do
         if [[ ! "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
             echo "ERROR: Invalid IP from DNS for $domain: $ip"
@@ -157,6 +160,33 @@ for domain in \
         echo "Adding $ip for $domain"
         ipset add allowed-domains "$ip" 2>/dev/null || true
     done < <(echo "$ips")
+}
+
+# Group 1: single-resolve
+for domain in \
+    "registry.npmjs.org" \
+    "api.anthropic.com" \
+    "sentry.io" \
+    "statsig.com" \
+    "marketplace.visualstudio.com" \
+    "vscode.blob.core.windows.net" \
+    "update.code.visualstudio.com" \
+    "context7.com" \
+    "mcp.context7.com" \
+    "raw.githubusercontent.com" \
+    "codeload.github.com" \
+    "objects.githubusercontent.com" \
+    "astral.sh"; do
+    resolve_and_allow "$domain" 1
+done
+
+# Group 2: multi-resolve (Fastly CDN, hit by apt / pip)
+for domain in \
+    "deb.debian.org" \
+    "security.debian.org" \
+    "pypi.org" \
+    "files.pythonhosted.org"; do
+    resolve_and_allow "$domain" 5
 done
 
 # Get host IP from default route
