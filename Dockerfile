@@ -22,11 +22,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ipset \
   iproute2 \
   dnsutils \
+  dnsmasq \
   aggregate \
   jq \
   nano \
   ca-certificates \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Stop the system-managed dnsmasq from auto-starting; init-firewall.sh
+# launches its own instance with our allowlist config at runtime.
+RUN systemctl disable dnsmasq.service 2>/dev/null || true; \
+    rm -f /etc/init.d/dnsmasq /etc/dnsmasq.d/* 2>/dev/null || true; \
+    : > /etc/dnsmasq.conf
 
 # Ensure default node user has access to /usr/local/share
 RUN mkdir -p /usr/local/share/npm-global && \
