@@ -25,13 +25,24 @@ IFS=$'\n\t'
 # never in ipset), and attempts to reach an external resolver (e.g. 8.8.8.8)
 # get REJECTed at the dport-53 rule.
 
-DNSMASQ_CONF=/opt/devcontainer/config/dnsmasq/dnsmasq.conf
-DOCKER_DNS=127.0.0.11
+DNSMASQ_CONF_TEMPLATE=/opt/devcontainer/config/dnsmasq/dnsmasq.conf
+DNSMASQ_CONF_RUNTIME=/tmp/dnsmasq.runtime.conf
+
+# 0. Detect the upstream DNS from /etc/resolv.conf BEFORE we overwrite it.
+#    On plain Linux + default Docker bridge this is 127.0.0.11 (Docker's
+#    embedded resolver). On Docker Desktop for Mac/Windows it is typically
+#    a VM-side IP like 192.168.65.7. We must use whatever is actually live
+#    or dnsmasq will time out forever trying to forward queries.
+UPSTREAM_DNS=$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf || true)
+if [ -z "$UPSTREAM_DNS" ]; then
+    echo "ERROR: could not read a nameserver from /etc/resolv.conf"
+    exit 1
+fi
+echo "Detected upstream DNS: ${UPSTREAM_DNS}"
 
 # 1. Save the existing Docker DNS NAT rules so we can restore them after the
-# flush. Without this, Docker's name-resolution magic is destroyed and even
-# 127.0.0.11 stops working.
-DOCKER_DNS_RULES=$(iptables-save -t nat | grep "${DOCKER_DNS}" || true)
+#    flush. On Docker Desktop for Mac these may not exist; that's fine.
+DOCKER_DNS_RULES=$(iptables-save -t nat | grep "127\.0\.0\.11" || true)
 
 # Flush old state.
 iptables -F
@@ -55,16 +66,17 @@ fi
 # 2. Create the ipset that dnsmasq will populate at resolve time.
 ipset create allowed-domains hash:ip family inet timeout 0 -exist
 
-# 3. Start dnsmasq with our allowlist config. We run it under nohup so it
-# survives the postStart shell exiting; it logs to stdout (log-facility=- in
-# the conf) which the dev container forwards into the host log.
-echo "Starting dnsmasq with allowlist config: ${DNSMASQ_CONF}"
-# Kill any leftover dnsmasq from a prior run.
+# 3. Materialize a runtime dnsmasq config from the template by substituting
+#    __UPSTREAM_DNS__ with the value detected from /etc/resolv.conf.
+echo "Generating runtime dnsmasq config: ${DNSMASQ_CONF_RUNTIME}"
+sed "s|__UPSTREAM_DNS__|${UPSTREAM_DNS}|g" "${DNSMASQ_CONF_TEMPLATE}" > "${DNSMASQ_CONF_RUNTIME}"
+
+# Start dnsmasq with our allowlist config. dnsmasq is set to keep-in-foreground
+# in the conf, so we daemonize via setsid+& and capture its log.
+echo "Starting dnsmasq..."
 pkill -x dnsmasq 2>/dev/null || true
-# Wait a moment for the port to be released.
 sleep 0.2
-# Foreground in conf, but we daemonize via setsid+& so we don't block.
-setsid dnsmasq --conf-file="${DNSMASQ_CONF}" </dev/null >/var/log/dnsmasq.log 2>&1 &
+setsid dnsmasq --conf-file="${DNSMASQ_CONF_RUNTIME}" </dev/null >/var/log/dnsmasq.log 2>&1 &
 sleep 0.5
 if ! pgrep -x dnsmasq >/dev/null; then
     echo "ERROR: dnsmasq failed to start. Last log lines:"
@@ -85,15 +97,14 @@ iptables -A OUTPUT -o lo -j ACCEPT
 
 # DNS (53/udp + 53/tcp) is allowed only to:
 #   - 127.0.0.1: our dnsmasq (the only resolver apps see).
-#   - 127.0.0.11: Docker's embedded DNS (dnsmasq's upstream).
-# Note: 127.0.0.11 traffic is locally NAT'd by Docker, so it appears as
-# OUTPUT to that address from inside the container.
-iptables -A OUTPUT -p udp --dport 53 -d 127.0.0.1  -j ACCEPT
-iptables -A OUTPUT -p udp --dport 53 -d 127.0.0.11 -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 53 -d 127.0.0.1  -j ACCEPT
-iptables -A OUTPUT -p tcp --dport 53 -d 127.0.0.11 -j ACCEPT
-# Inbound DNS replies (stateful — see RELATED,ESTABLISHED below) are
-# accepted automatically. We do not need an explicit --sport 53 rule.
+#   - ${UPSTREAM_DNS}: the host-side resolver dnsmasq forwards to. On plain
+#     Linux this is usually 127.0.0.11 (Docker NAT magic); on Docker
+#     Desktop it is a VM-side IP like 192.168.65.7.
+# Inbound DNS replies are accepted by the RELATED,ESTABLISHED rule below.
+iptables -A OUTPUT -p udp --dport 53 -d 127.0.0.1       -j ACCEPT
+iptables -A OUTPUT -p udp --dport 53 -d "$UPSTREAM_DNS" -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 53 -d 127.0.0.1       -j ACCEPT
+iptables -A OUTPUT -p tcp --dport 53 -d "$UPSTREAM_DNS" -j ACCEPT
 
 # SSH outbound (kept for parity with the upstream Anthropic devcontainer's
 # convenience). Restrict to RELATED,ESTABLISHED for return traffic only.
