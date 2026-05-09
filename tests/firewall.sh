@@ -81,6 +81,8 @@ check "platform.claude.com is reachable (Claude Code login)" \
     curl --connect-timeout 10 -sS -o /dev/null https://platform.claude.com/
 check "sts.amazonaws.com is reachable (suffix match)" \
     curl --connect-timeout 10 -sS -o /dev/null https://sts.amazonaws.com/
+check "proxy.search.docs.aws.com is reachable (AWS Doc MCP search)" \
+    curl --connect-timeout 10 -sS -o /dev/null https://proxy.search.docs.aws.com/
 check "pypi.org is reachable" \
     curl --connect-timeout 10 -sS -o /dev/null https://pypi.org/
 check "registry.npmjs.org is reachable" \

@@ -153,6 +153,7 @@ dnsmasq は IP を自分で「知っている」わけではない。**誰かに
 ```
 amazonaws.com         # AWS API、SSO、ELB 等。ip-ranges.json 全許可をこれに置き換え
 awsapps.com           # AWS SSO ポータル
+docs.aws.com          # AWS Documentation MCP（proxy.search.docs.aws.com 等）
 github.com            # GitHub 関連
 githubusercontent.com # raw, objects 等
 anthropic.com         # api.anthropic.com、将来の statsig.anthropic.com 等
