@@ -149,6 +149,54 @@ L3（ネットワーク層）で動くため、パケットには「宛先 IP」
   ただし「事前に使う AWS サービスを決め打つ」運用負荷とのトレードオフ
 - 詳細な未対応項目は `develop/REVIEW.md` に記録している
 
+### SSH アウトバウンド（TCP/22）はブロックしている
+
+公式 Anthropic devcontainer は TCP/22 を無条件で許可しているが、本リポジトリでは
+**意図的にブロックしている**。理由：
+
+- 公式の許可ルール（`iptables -A OUTPUT -p tcp --dport 22 -j ACCEPT`）には宛先制限
+  （`-d`）も ipset マッチも無く、`dnsmasq + ipset` で組み立てたドメインフィルタを
+  完全に迂回できる経路になる
+- 本リポジトリの脅威モデル（[`develop/DOMAIN_FILTERING_DESIGN.md`](develop/DOMAIN_FILTERING_DESIGN.md)、
+  [`develop/DNS_FILTER_PRIMER.md`](develop/DNS_FILTER_PRIMER.md) 参照）では「IP 直打ち遮断」
+  「外部 DNS 経由の脱出遮断」を明示的なゴールにしており、SSH の素通しはこれと矛盾する
+- そもそも認証が必要な Git 操作（`git push` / `git fetch` / プライベート repo の
+  clone 等）はホスト側で実行する方針（[GitHub の認証](#github-の認証) 節参照）
+
+#### 影響
+
+| 操作 | 可否 | 備考 |
+|------|------|------|
+| `git clone https://github.com/...`（公開 repo） | ✅ 可 | `github.com` は dnsmasq の許可リストにあり、TCP/443 で完結 |
+| `git clone git@github.com:...`（SSH 形式） | ❌ 不可 | TCP/22 が塞がれている |
+| `ssh user@somehost` | ❌ 不可 | 同上 |
+| `git push` / `git pull` / `gh pr create` | （実施しない） | コンテナ内ではやらない方針 |
+
+公開リポジトリの `git clone` は HTTPS で代替できるため、通常運用では困らない。
+
+#### フォーク（vendor in）後にコンテナ内 SSH が必要になった場合
+
+特定ホストに対してだけ SSH を開けるパッチを当てる例：
+
+```bash
+# init-firewall.sh の「7. Default policy + main allow rules.」より前で
+# 個別ホストのみに限定して許可する
+SSH_ALLOWED_HOST="ssh.example.com"
+ssh_ip=$(getent hosts "$SSH_ALLOWED_HOST" | awk '{print $1; exit}')
+iptables -A OUTPUT -p tcp --dport 22 -d "$ssh_ip" -j ACCEPT
+```
+
+ただしこの方式は起動時の dig スナップショットに依存するため、CDN 配下のホストには
+不向き。GitHub の SSH（`github.com` の port 22）に開けたい場合は、`github.com` が
+既に dnsmasq の接尾辞許可に含まれているので、`-m set --match-set allowed-domains dst`
+を併用する以下の形がよりクリーン：
+
+```bash
+iptables -A OUTPUT -p tcp --dport 22 -m set --match-set allowed-domains dst -j ACCEPT
+```
+
+これなら DNS 経由で解決された IP（= 許可ドメインの実 IP）に対してのみ SSH が通る。
+
 ## コンテナをリセットしたい時
 
 状況に応じて段階的に強くなる手順がある。最も軽いものから試すこと。

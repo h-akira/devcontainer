@@ -106,10 +106,15 @@ iptables -A OUTPUT -p udp --dport 53 -d "$UPSTREAM_DNS" -j ACCEPT
 iptables -A OUTPUT -p tcp --dport 53 -d 127.0.0.1       -j ACCEPT
 iptables -A OUTPUT -p tcp --dport 53 -d "$UPSTREAM_DNS" -j ACCEPT
 
-# SSH outbound (kept for parity with the upstream Anthropic devcontainer's
-# convenience). Restrict to RELATED,ESTABLISHED for return traffic only.
-iptables -A OUTPUT -p tcp --dport 22 -j ACCEPT
-iptables -A INPUT  -p tcp --sport 22 -m state --state ESTABLISHED -j ACCEPT
+# NOTE: SSH outbound (TCP/22) is intentionally NOT allowed here. The upstream
+# Anthropic devcontainer opens it unconditionally, but doing so would let any
+# in-container client bypass the dnsmasq+ipset domain filter (no -d
+# restriction, no DNS-driven ipset gate). For the threat model of this repo
+# (block accidental egress, force domain-level allowlisting), SSH outbound
+# must go through the same gate as everything else — i.e. only IPs already
+# resolved from an allowlisted domain. Public-repo `git clone` works over
+# HTTPS via the github.com allowlist; auth-required Git operations are
+# expected to run on the host. See README.md "SSH outbound is blocked".
 
 # 6. Host network — allow the IDE side to reach into the container.
 HOST_IP=$(ip route | awk '/default/ {print $3; exit}')
