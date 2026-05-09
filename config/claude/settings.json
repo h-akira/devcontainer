@@ -1,5 +1,13 @@
 {
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "permissions": {
+    "allow": [
+      "mcp__awslabs_aws-documentation-mcp-server__search_documentation",
+      "mcp__awslabs_aws-documentation-mcp-server__read_documentation"
+    ],
     "deny": [
       "Read(~/.aws/**)"
     ]
