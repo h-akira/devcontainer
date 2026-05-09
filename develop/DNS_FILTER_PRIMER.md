@@ -156,6 +156,7 @@ awsapps.com           # AWS SSO ポータル
 github.com            # GitHub 関連
 githubusercontent.com # raw, objects 等
 anthropic.com         # api.anthropic.com、将来の statsig.anthropic.com 等
+claude.com            # Claude Code ログインフロー（platform.claude.com 等）
 debian.org            # deb, security, ftp 等
 pypi.org
 pythonhosted.org      # files.pythonhosted.org

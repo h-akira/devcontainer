@@ -77,6 +77,8 @@ check "api.github.com resolves via dnsmasq" \
     bash -c "host -W 5 api.github.com 127.0.0.1"
 check "api.github.com is reachable" \
     curl --connect-timeout 10 -sS https://api.github.com/zen -o /dev/null
+check "platform.claude.com is reachable (Claude Code login)" \
+    curl --connect-timeout 10 -sS -o /dev/null https://platform.claude.com/
 check "sts.amazonaws.com is reachable (suffix match)" \
     curl --connect-timeout 10 -sS -o /dev/null https://sts.amazonaws.com/
 check "pypi.org is reachable" \
