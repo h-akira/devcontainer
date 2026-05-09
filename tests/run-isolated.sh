@@ -110,17 +110,34 @@ devcontainer up \
     --workspace-folder "$TEST_WORKSPACE" \
     --remove-existing-container
 
-# --- 3) Run firewall.sh inside the throwaway container ---
-echo "[3/4] Running /workspace/.devcontainer/tests/firewall.sh inside container ..."
+# --- 3) Run firewall.sh (root) and tools.sh (node) inside the container ---
+# firewall.sh needs root for iptables/ipset reads; tools.sh must NOT run under
+# sudo (sudo's secure_path strips /home/node/.local/bin where uv lives, which
+# would falsely fail "uv is available"). Run both, surface the union of
+# results so a failure in either is visible.
+echo "[3/4] Running /workspace/.devcontainer/tests/firewall.sh (sudo) inside container ..."
 devcontainer exec \
     --workspace-folder "$TEST_WORKSPACE" \
     sudo /workspace/.devcontainer/tests/firewall.sh
-test_rc=$?
+firewall_rc=$?
+
+echo
+echo "[3/4] Running /workspace/.devcontainer/tests/tools.sh (node) inside container ..."
+devcontainer exec \
+    --workspace-folder "$TEST_WORKSPACE" \
+    /workspace/.devcontainer/tests/tools.sh
+tools_rc=$?
+
+if [ "$firewall_rc" -ne 0 ] || [ "$tools_rc" -ne 0 ]; then
+    test_rc=1
+else
+    test_rc=0
+fi
 
 # --- 4) Done; trap handles cleanup ---
 if [ "$test_rc" -eq 0 ]; then
     echo "[4/4] All tests passed."
 else
-    echo "[4/4] Tests FAILED (exit $test_rc)." >&2
+    echo "[4/4] Tests FAILED (firewall.sh exit $firewall_rc, tools.sh exit $tools_rc)." >&2
 fi
 exit $test_rc

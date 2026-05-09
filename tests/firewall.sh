@@ -1,6 +1,10 @@
 #!/bin/bash
 # tests/firewall.sh — DNS-filter firewall acceptance tests.
 #
+# Must run as root (needs to read iptables/ipset). Pair with tools.sh, which
+# covers the tool-availability checks under the node user (so $PATH includes
+# /home/node/.local/bin and uv resolves correctly).
+#
 # Run inside a running devcontainer (the firewall must already be set up by
 # init-firewall.sh, which happens automatically at postStartCommand):
 #
@@ -105,22 +109,6 @@ check_blocked "external DNS (@1.1.1.1) is blocked at port 53" \
 # --- ipset population (lazy: dnsmasq adds IPs on resolve) ---
 check "ipset has at least 1 entry (populated by earlier curls)" \
     bash -c "test \"\$(ipset list allowed-domains | grep -c '^[0-9]')\" -ge 1"
-
-# --- Tools availability sanity check ---
-check "aws CLI v2.x is available" \
-    bash -c "aws --version 2>&1 | grep -q '^aws-cli/2\.'"
-check "uv is available" \
-    command -v uv
-check "node 20.x is available" \
-    bash -c "node --version | grep -q '^v20\.'"
-check "nvim is available" \
-    command -v nvim
-check "vim is symlinked to nvim" \
-    bash -c "readlink -f /usr/local/bin/vim | grep -q nvim"
-check "deno is available" \
-    command -v deno
-check "tmux is available" \
-    command -v tmux
 
 echo
 if [ "$FAIL" -eq 0 ]; then
